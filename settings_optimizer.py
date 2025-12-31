@@ -1,3 +1,4 @@
+import argparse
 import copy
 import datetime
 import json
@@ -8,16 +9,14 @@ from optuna.samplers import GridSampler
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
 
-import brain
+import ace_lib as ace
 import reward
+from patch import disable_progress_bar, get_stored_session
 
 with open("regions.json", "r") as f:
     regions = json.load(f)  # Region Constants
 with open("alpha.json", "r") as f:
     alpha = json.load(f)
-
-now = datetime.datetime.now()
-study_file_name = now.strftime("%Y-%m-%d_%H-%M-%S")
 
 region = alpha["settings"]["region"]
 region_consts = regions[region]
@@ -25,7 +24,8 @@ region_consts["Neutralization"].remove(
     "NONE"
 )  # No Point in having Neutralization as NONE
 
-brain_session = brain.re_login()
+disable_progress_bar()
+brain_session = get_stored_session()
 
 search_space = {
     "maxTrade": ["ON", "OFF"],
@@ -66,65 +66,94 @@ def objective(trial):
     trial_alpha["settings"]["neutralization"] = p_neutralization
     trial_alpha["settings"]["maxTrade"] = p_maxTrade
 
-    alpha_id = brain.Alpha.simulate(brain_session, trial_alpha)
-    result = brain.Alpha.simulation_result(brain_session, alpha_id)
+    simulation_results = ace.simulate_alpha_list(
+        brain_session, [trial_alpha], limit_of_concurrent_simulations=1
+    )
+    result = simulation_results[0]
 
-    insample = result["is"]
+    insample = result["is_stats"].to_dict(orient="records")[0]
+    checks = result["is_tests"].to_dict(orient="records")
 
-    trial.set_user_attr("alpha_id", result["id"])
+    trial.set_user_attr("alpha_id", result["alpha_id"])
     trial.set_user_attr("sharpe", insample["sharpe"])
     trial.set_user_attr("fitness", insample["fitness"])
     trial.set_user_attr("turnover", insample["turnover"])
     trial.set_user_attr("returns", insample["returns"])
     trial.set_user_attr("drawdown", insample["drawdown"])
 
-    failed_checks = [
-        check["name"] for check in insample["checks"] if check["result"] == "FAIL"
-    ]
+    failed_checks = [check["name"] for check in checks if check["result"] == "FAIL"]
     trial.set_user_attr(
         "failed_checks", ",".join(failed_checks) if failed_checks else "NONE"
     )
 
-    passed_checks = [
-        check["name"] for check in insample["checks"] if check["result"] == "PASS"
-    ]
+    passed_checks = [check["name"] for check in checks if check["result"] == "PASS"]
     trial.set_user_attr(
         "passed_checks", ",".join(passed_checks) if passed_checks else "NONE"
     )
 
-    warnings = [
-        check["name"] for check in insample["checks"] if check["result"] == "WARNING"
-    ]
+    warnings = [check["name"] for check in checks if check["result"] == "WARNING"]
     trial.set_user_attr("warnings", ",".join(warnings) if warnings else "NONE")
 
     score = reward.net_calmar_ratio(insample)
     return round(score, 2)
 
 
-"""
-Journal Storage is better to use than SQLite when considering multiple workers
-but unfortunately have to use Administrative Privileges in Windows to run the script
-sudo comes in clutch though
-"""
-storage = JournalStorage(JournalFileBackend(f"./studies/{study_file_name}.log"))
-sampler = GridSampler(search_space)
-study = optuna.create_study(
-    study_name="settings_optimizer",
-    direction="maximize",
-    storage=storage,
-    sampler=sampler,
-)
+if __name__ == "__main__":
 
-total_combinations = math.prod([len(v) for v in search_space.values()])
-print(f"Starting Search: {total_combinations} combinations.")
+    parser = argparse.ArgumentParser(
+        description="Optimize Alpha Settings using Optuna GridSampler."
+    )
 
-start_time = datetime.datetime.now()
+    parser.add_argument(
+        "--simulations",
+        "-s",
+        type=int,
+        default=5,
+        help="Number of concurrent simulations (n_jobs). Must be 1...5. Default: 5",  # Maximum Concurrent Simulations on BRAIN is 5
+    )
 
-try:
-    study.optimize(objective, n_jobs=5)  # Maximum Concurrent Simulations on BRAIN is 5
-except KeyboardInterrupt:
-    print("Study interrupted by user...")
+    now = datetime.datetime.now()
+    parser.add_argument(
+        "--name",
+        "-n",
+        type=str,
+        default=now.strftime("%Y-%m-%d_%H-%M-%S"),
+        help="Name of File under studies/ folder. Default: %Y-%m-%d_%H-%M-%S",
+    )
 
-elapsed = datetime.datetime.now() - start_time
-print(f"Total study time: {elapsed}")
-input()
+    args = parser.parse_args()
+
+    if not (1 <= args.simulations <= 5):
+        parser.error("--simulations must be an integer between 1 and 5")
+
+    simulations = args.simulations
+    study_file_name = args.name
+
+    """
+    Journal Storage is better to use than SQLite when considering multiple workers
+    but unfortunately have to use Administrative Privileges in Windows to run the script
+    sudo comes in clutch though
+    """
+    storage = JournalStorage(JournalFileBackend(f"./studies/{study_file_name}.log"))
+    sampler = GridSampler(search_space)
+    study = optuna.create_study(
+        study_name="settings_optimizer",
+        direction="maximize",
+        storage=storage,
+        sampler=sampler,
+        load_if_exists=True,
+    )
+
+    total_combinations = math.prod([len(v) for v in search_space.values()])
+    print(f"Starting Search: {total_combinations} combinations.")
+
+    start_time = datetime.datetime.now()
+
+    try:
+        study.optimize(objective, n_jobs=simulations)
+    except KeyboardInterrupt:
+        print("Study interrupted by user...")
+
+    elapsed = datetime.datetime.now() - start_time
+    print(f"Total study time: {elapsed}")
+    input()

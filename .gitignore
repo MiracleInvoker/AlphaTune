@@ -1,3 +1,20 @@
+# Configurations
 .env
+session.pkl
+alpha.json
+
+
+# Project Files
 studies/
-brain.py
+
+
+# Python
+__pycache__/
+.venv/
+
+
+# ACE API (WorldQuant BRAIN Platform)
+ace_lib.py
+helpful_functions.py
+how_to_use.ipynb
+ace.log
