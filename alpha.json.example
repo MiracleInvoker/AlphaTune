@@ -1,0 +1,20 @@
+{
+  "type": "REGULAR",
+  "settings": {
+    "instrumentType": "EQUITY",
+    "region": "USA",
+    "universe": null,
+    "language": "FASTEXPR",
+    "decay": 0,
+    "delay": null,
+    "truncation": 0.08,
+    "neutralization": null,
+    "pasteurization": "ON",
+    "nanHandling": "ON",
+    "unitHandling": "VERIFY",
+    "maxTrade": null,
+    "testPeriod": "P2Y",
+    "visualization": false
+  },
+  "regular": "operating_income / assets"
+}
