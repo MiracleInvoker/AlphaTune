@@ -11,7 +11,7 @@ from optuna.storages.journal import JournalFileBackend
 
 import ace_lib as ace
 import reward
-from patch import disable_progress_bar, get_stored_session
+from ace_extensions import disable_progress_bar, get_stored_session
 
 with open("regions.json", "r") as f:
     regions = json.load(f)  # Region Constants
@@ -25,7 +25,7 @@ region_consts["Neutralization"].remove(
 )  # No Point in having Neutralization as NONE
 
 disable_progress_bar()
-brain_session = get_stored_session()
+brain_session = get_stored_session(duration=7200)
 
 search_space = {
     "maxTrade": ["ON", "OFF"],
