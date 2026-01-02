@@ -2,7 +2,8 @@ import argparse
 import copy
 import datetime
 import json
-import math
+from math import prod
+from os import makedirs
 
 import optuna
 from optuna.samplers import GridSampler
@@ -11,36 +12,49 @@ from optuna.storages.journal import JournalFileBackend
 
 import ace_lib as ace
 import reward
-from ace_extensions import disable_progress_bar, get_stored_session
+from ace_extensions import disable_progress_bar, get_datafield, get_stored_session
+from utils import extract_datafields
 
-with open("regions.json", "r") as f:
-    regions = json.load(f)  # Region Constants
+with open("region_consts.json", "r") as f:
+    region_consts = json.load(f)  # Region Constants
+
 with open("alpha.json", "r") as f:
     alpha = json.load(f)
 
-region = alpha["settings"]["region"]
-region_consts = regions[region]
-region_consts["Neutralization"].remove(
-    "NONE"
-)  # No Point in having Neutralization as NONE
 
-disable_progress_bar()
+region = alpha["settings"]["region"]
+neutralizations = region_consts[region]["neutralization"]
+neutralizations.remove("NONE")  # No Point in having Neutralization as NONE
+
+datafields = extract_datafields(alpha["regular"])
 brain_session = get_stored_session(duration=7200)
+disable_progress_bar()
+
+
+universes = None
+delays = None
+for datafield in datafields:
+    datafield = get_datafield(brain_session, datafield)
+    data = datafield["data"]
+
+    current_universes = {item["universe"] for item in data if item["region"] == region}
+    current_delays = {item["delay"] for item in data if item["region"] == region}
+
+    if universes is None:
+        universes = current_universes
+        delays = current_delays
+
+    else:
+        universes.intersection_update(current_universes)
+        delays.intersection_update(current_delays)
+
 
 search_space = {
-    "maxTrade": ["ON", "OFF"],
-    "universe": region_consts["Universe"],
-    "neutralization": region_consts["Neutralization"],
+    "universe": sorted(universes),
+    "delay": sorted(delays),
+    "neutralization": neutralizations,
+    "maxTrade": ["OFF", "ON"],
 }
-
-# Conditional Search Space: Might not always be necessary to Optimize Delay
-if alpha["settings"]["delay"] is None:
-    search_space["delay"] = region_consts["Delay"]
-else:
-    print(
-        f"Delay is already set to {alpha['settings']['delay']}. Skipping optimization for delay."
-    )
-    search_space["delay"] = [alpha["settings"]["delay"]]
 
 
 def objective(trial):
@@ -48,8 +62,8 @@ def objective(trial):
     # Make a copy of the Global Variable "alpha" so that the objective function is thread safe
     trial_alpha = copy.deepcopy(alpha)
 
-    p_delay = trial.suggest_categorical("delay", search_space["delay"])
     p_universe = trial.suggest_categorical("universe", search_space["universe"])
+    p_delay = trial.suggest_categorical("delay", search_space["delay"])
     p_neutralization = trial.suggest_categorical(
         "neutralization", search_space["neutralization"]
     )
@@ -66,15 +80,14 @@ def objective(trial):
     trial_alpha["settings"]["neutralization"] = p_neutralization
     trial_alpha["settings"]["maxTrade"] = p_maxTrade
 
-    simulation_results = ace.simulate_alpha_list(
-        brain_session, [trial_alpha], limit_of_concurrent_simulations=1
-    )
-    result = simulation_results[0]
+    simulation_response = ace.simulate_single_alpha(brain_session, trial_alpha)
+    alpha_id = simulation_response["alpha_id"]
+    simulation_result = ace.get_simulation_result_json(brain_session, alpha_id)
 
-    insample = result["is_stats"].to_dict(orient="records")[0]
-    checks = result["is_tests"].to_dict(orient="records")
+    insample = simulation_result["is"]
+    checks = insample["checks"]
 
-    trial.set_user_attr("alpha_id", result["alpha_id"])
+    trial.set_user_attr("alpha_id", alpha_id)
     trial.set_user_attr("sharpe", insample["sharpe"])
     trial.set_user_attr("fitness", insample["fitness"])
     trial.set_user_attr("turnover", insample["turnover"])
@@ -108,8 +121,8 @@ if __name__ == "__main__":
         "--simulations",
         "-s",
         type=int,
-        default=5,
-        help="Number of concurrent simulations (n_jobs). Must be 1...5. Default: 5",  # Maximum Concurrent Simulations on BRAIN is 5
+        default=8,
+        help="Number of concurrent simulations (n_jobs). Must be 1...8. Default: 8",  # Maximum Concurrent Simulations on BRAIN is 8
     )
 
     now = datetime.datetime.now()
@@ -123,8 +136,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not (1 <= args.simulations <= 5):
-        parser.error("--simulations must be an integer between 1 and 5")
+    if not (1 <= args.simulations <= 8):
+        parser.error("--simulations must be an integer between 1 and 8")
 
     simulations = args.simulations
     study_file_name = args.name
@@ -134,7 +147,10 @@ if __name__ == "__main__":
     but unfortunately have to use Administrative Privileges in Windows to run the script
     sudo comes in clutch though
     """
-    storage = JournalStorage(JournalFileBackend(f"./studies/{study_file_name}.log"))
+    makedirs(f"./studies/{region}", exist_ok=True)
+    storage = JournalStorage(
+        JournalFileBackend(f"./studies/{region}/{study_file_name}.log")
+    )
     sampler = GridSampler(search_space)
     study = optuna.create_study(
         study_name="settings_optimizer",
@@ -144,8 +160,9 @@ if __name__ == "__main__":
         load_if_exists=True,
     )
 
-    total_combinations = math.prod([len(v) for v in search_space.values()])
-    print(f"Starting Search: {total_combinations} combinations.")
+    total_combinations = prod([len(values) for values in search_space.values()])
+    print(f"Total Combinations: {total_combinations}")
+    print(f"Starting Search.")
 
     start_time = datetime.datetime.now()
 
@@ -155,5 +172,5 @@ if __name__ == "__main__":
         print("Study interrupted by user...")
 
     elapsed = datetime.datetime.now() - start_time
-    print(f"Total study time: {elapsed}")
+    print(f"Total Study Time: {elapsed}")
     input()

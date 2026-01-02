@@ -139,3 +139,21 @@ def create_tag_list(s: ace.SingleSession, name: str, alpha_ids: list[str]) -> di
         return {}
 
     return response.json()
+
+
+def get_datafield(s: ace.SingleSession, datafield: str):
+    """
+    Retrieve Data Field.
+
+    Args:
+        s (SingleSession): An authenticated session object.
+        data_field (str): Name of Data Field
+
+    Returns:
+        JSON: A JSON Object containing information about the Data Field.
+    """
+
+    resp = s.get(ace.brain_api_url + "/data-fields/" + datafield)
+    resp_json = resp.json()
+
+    return resp_json

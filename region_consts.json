@@ -1,6 +1,6 @@
 {
   "USA": {
-    "Universe": [
+    "universe": [
       "TOP3000",
       "TOP1000",
       "TOP500",
@@ -8,8 +8,8 @@
       "ILLIQUID_MINVOL1M",
       "TOPSP500"
     ],
-    "Delay": [0, 1],
-    "Neutralization": [
+    "delay": [0, 1],
+    "neutralization": [
       "NONE",
       "REVERSION_AND_MOMENTUM",
       "STATISTICAL",
@@ -24,9 +24,9 @@
     ]
   },
   "GLB": {
-    "Universe": ["TOP3000", "MINVOL1M", "TOPDIV3000"],
-    "Delay": [1],
-    "Neutralization": [
+    "universe": ["TOP3000", "MINVOL1M", "TOPDIV3000"],
+    "delay": [1],
+    "neutralization": [
       "NONE",
       "REVERSION_AND_MOMENTUM",
       "STATISTICAL",
@@ -42,9 +42,9 @@
     ]
   },
   "EUR": {
-    "Universe": ["TOP2500", "TOP1200", "TOP800", "TOP400", "ILLIQUID_MINVOL1M"],
-    "Delay": [0, 1],
-    "Neutralization": [
+    "universe": ["TOP2500", "TOP1200", "TOP800", "TOP400", "ILLIQUID_MINVOL1M"],
+    "delay": [0, 1],
+    "neutralization": [
       "NONE",
       "REVERSION_AND_MOMENTUM",
       "STATISTICAL",
@@ -60,9 +60,9 @@
     ]
   },
   "ASI": {
-    "Universe": ["MINVOL1M", "ILLIQUID_MINVOL1M"],
-    "Delay": [1],
-    "Neutralization": [
+    "universe": ["MINVOL1M", "ILLIQUID_MINVOL1M"],
+    "delay": [1],
+    "neutralization": [
       "NONE",
       "REVERSION_AND_MOMENTUM",
       "STATISTICAL",
@@ -78,9 +78,9 @@
     ]
   },
   "CHN": {
-    "Universe": ["TOP2000U"],
-    "Delay": [0, 1],
-    "Neutralization": [
+    "universe": ["TOP2000U"],
+    "delay": [0, 1],
+    "neutralization": [
       "NONE",
       "REVERSION_AND_MOMENTUM",
       "CROWDING",
@@ -94,9 +94,9 @@
     ]
   },
   "IND": {
-    "Universe": ["TOP500"],
-    "Delay": [1],
-    "Neutralization": [
+    "universe": ["TOP500"],
+    "delay": [1],
+    "neutralization": [
       "NONE",
       "REVERSION_AND_MOMENTUM",
       "CROWDING",
