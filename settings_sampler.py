@@ -114,7 +114,7 @@ def objective(trial):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
-        description="Optimize Alpha Settings using Optuna GridSampler."
+        description="Optimize Alpha Simulation Settings using Optuna GridSampler."
     )
 
     parser.add_argument(
@@ -147,13 +147,11 @@ if __name__ == "__main__":
     but unfortunately have to use Administrative Privileges in Windows to run the script
     sudo comes in clutch though
     """
-    makedirs(f"./studies/{region}", exist_ok=True)
-    storage = JournalStorage(
-        JournalFileBackend(f"./studies/{region}/{study_file_name}.log")
-    )
+    makedirs(f"./studies", exist_ok=True)
+    storage = JournalStorage(JournalFileBackend(f"./studies/{study_file_name}.log"))
     sampler = GridSampler(search_space)
     study = optuna.create_study(
-        study_name="settings_optimizer",
+        study_name=f"{region}_settings_sampler",
         direction="maximize",
         storage=storage,
         sampler=sampler,
@@ -173,4 +171,4 @@ if __name__ == "__main__":
 
     elapsed = datetime.datetime.now() - start_time
     print(f"Total Study Time: {elapsed}")
-    input()
+    input("Press Enter to exit...")
