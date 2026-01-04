@@ -6,14 +6,14 @@ from math import prod
 from os import makedirs
 
 import optuna
-from optuna.samplers import GridSampler
+from optuna.samplers import BruteForceSampler
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
+from optuna.trial import TrialState
 
-import ace_lib as ace
 import reward
-from ace_extensions import disable_progress_bar, get_datafield, get_stored_session
-from utils import extract_datafields
+from ace_extensions import get_datafield, get_stored_session, simulate_single_alpha
+from utils import extract_datafields, get_common_regions
 
 with open("region_consts.json", "r") as f:
     region_consts = json.load(f)  # Region Constants
@@ -22,39 +22,25 @@ with open("alpha.json", "r") as f:
     alpha = json.load(f)
 
 
-region = alpha["settings"]["region"]
-neutralizations = region_consts[region]["neutralization"]
-neutralizations.remove("NONE")  # No Point in having Neutralization as NONE
-
 datafields = extract_datafields(alpha["regular"])
 brain_session = get_stored_session(duration=7200)
-disable_progress_bar()
 
-
-universes = None
-delays = None
+data_list = []
 for datafield in datafields:
     datafield = get_datafield(brain_session, datafield)
     data = datafield["data"]
 
-    current_universes = {item["universe"] for item in data if item["region"] == region}
-    current_delays = {item["delay"] for item in data if item["region"] == region}
-
-    if universes is None:
-        universes = current_universes
-        delays = current_delays
-
-    else:
-        universes.intersection_update(current_universes)
-        delays.intersection_update(current_delays)
+    data_list.append(data)
 
 
-search_space = {
-    "universe": sorted(universes),
-    "delay": sorted(delays),
-    "neutralization": neutralizations,
-    "maxTrade": ["OFF", "ON"],
-}
+common_regions = get_common_regions(data_list)
+
+region = alpha["settings"]["region"]
+
+neutralizations = region_consts[region]["neutralization"]
+current_region = common_regions[region]
+
+neutralizations.remove("NONE")  # No Point in having Neutralization as NONE
 
 
 def objective(trial):
@@ -62,17 +48,17 @@ def objective(trial):
     # Make a copy of the Global Variable "alpha" so that the objective function is thread safe
     trial_alpha = copy.deepcopy(alpha)
 
-    p_universe = trial.suggest_categorical("universe", search_space["universe"])
-    p_delay = trial.suggest_categorical("delay", search_space["delay"])
-    p_neutralization = trial.suggest_categorical(
-        "neutralization", search_space["neutralization"]
-    )
-    p_maxTrade = trial.suggest_categorical("maxTrade", search_space["maxTrade"])
+    p_delay = trial.suggest_categorical("delay", list(current_region.keys()))
+    p_universe = trial.suggest_categorical("universe", current_region[p_delay])
+    p_neutralization = trial.suggest_categorical("neutralization", neutralizations)
+    p_maxTrade = trial.suggest_categorical("maxTrade", ["ON", "OFF"])
 
     # Handling the Concurrency Race Condition which occurs at the end of the study
     for t in trial.study.trials:
+        if t.number == trial.number:
+            continue
 
-        if t.number != trial.number and t.params == trial.params:
+        if t.params == trial.params and t.state != TrialState.FAIL:
             raise optuna.TrialPruned("Duplicate Trial Detected!")
 
     trial_alpha["settings"]["delay"] = p_delay
@@ -80,10 +66,16 @@ def objective(trial):
     trial_alpha["settings"]["neutralization"] = p_neutralization
     trial_alpha["settings"]["maxTrade"] = p_maxTrade
 
-    simulation_response = ace.simulate_single_alpha(brain_session, trial_alpha)
-    alpha_id = simulation_response["alpha_id"]
-    simulation_result = ace.get_simulation_result_json(brain_session, alpha_id)
+    simulation_result = simulate_single_alpha(brain_session, trial_alpha)
 
+    """
+    Handles this Error:
+    Your simulation has been running too long. If you are running simulations in batch, consider to reduce number of concurrent simulations or input data.
+    """
+    if "id" not in simulation_result:
+        simulation_result = simulate_single_alpha(brain_session, trial_alpha)
+
+    alpha_id = simulation_result["id"]
     insample = simulation_result["is"]
     checks = insample["checks"]
 
@@ -151,7 +143,7 @@ if __name__ == "__main__":
     """
     makedirs(f"./studies", exist_ok=True)
     storage = JournalStorage(JournalFileBackend(f"./studies/{study_file_name}.log"))
-    sampler = GridSampler(search_space)
+    sampler = BruteForceSampler()
     study = optuna.create_study(
         study_name=study_name,
         direction="maximize",
@@ -160,8 +152,12 @@ if __name__ == "__main__":
         load_if_exists=True,
     )
 
-    total_combinations = prod([len(values) for values in search_space.values()])
-    print(f"Total Combinations: {total_combinations}")
+    failed_trials = [t for t in study.trials if t.state == TrialState.FAIL]
+    if len(failed_trials) > 0:
+        print(f"Found {len(failed_trials)} failed trials. Re-enqueueing them...")
+        for t in failed_trials:
+            study.enqueue_trial(t.params)
+
     print(f"Starting Search.")
 
     start_time = datetime.datetime.now()

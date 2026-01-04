@@ -1,8 +1,11 @@
 import os
 import pickle
 import time
+from functools import partial
+from multiprocessing.pool import ThreadPool
 
 import pandas as pd
+import tqdm
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -157,3 +160,39 @@ def get_datafield(s: ace.SingleSession, datafield: str):
     resp_json = resp.json()
 
     return resp_json
+
+
+def simulate_single_alpha(
+    brain_session: ace.SingleSession,
+    alpha: dict,
+) -> dict:
+
+    simulation_response = ace.start_simulation(brain_session, alpha)
+    simulation_result = ace.simulation_progress(brain_session, simulation_response)
+
+    if not simulation_result["completed"]:
+        return ""
+
+    return simulation_result["result"]
+
+
+def simulate_alpha_list(
+    brain_session: ace.SingleSession,
+    alpha_list: list,
+    limit_of_concurrent_simulations: int = 5,
+) -> list:
+
+    if (limit_of_concurrent_simulations < 1) or (limit_of_concurrent_simulations > 8):
+        limit_of_concurrent_simulations = 5
+
+    result_list = []
+
+    with ThreadPool(limit_of_concurrent_simulations) as pool:
+        with tqdm.tqdm(total=len(alpha_list)) as pbar:
+            for result in pool.imap_unordered(
+                partial(simulate_single_alpha, brain_session), alpha_list
+            ):
+                result_list.append(result)
+                pbar.update()
+
+    return result_list
