@@ -142,6 +142,8 @@ if __name__ == "__main__":
     simulations = args.simulations
     study_file_name = args.name
 
+    study_name = f"{region}_settings_sampler"
+
     """
     Journal Storage is better to use than SQLite when considering multiple workers
     but unfortunately have to use Administrative Privileges in Windows to run the script
@@ -151,7 +153,7 @@ if __name__ == "__main__":
     storage = JournalStorage(JournalFileBackend(f"./studies/{study_file_name}.log"))
     sampler = GridSampler(search_space)
     study = optuna.create_study(
-        study_name=f"{region}_settings_sampler",
+        study_name=study_name,
         direction="maximize",
         storage=storage,
         sampler=sampler,
@@ -166,9 +168,11 @@ if __name__ == "__main__":
 
     try:
         study.optimize(objective, n_jobs=simulations)
+
     except KeyboardInterrupt:
-        print("Study interrupted by user...")
+        print("Study interrupted by User...")
 
     elapsed = datetime.datetime.now() - start_time
+    print(f"Study Name: {study_file_name}/{study_name}")
     print(f"Total Study Time: {elapsed}")
-    input("Press Enter to exit...")
+    input("Press Enter to Exit...")
