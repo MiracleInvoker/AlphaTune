@@ -106,7 +106,7 @@ def objective(trial):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
-        description="Optimize Alpha Simulation Settings using Optuna GridSampler."
+        description="Optimize Alpha Simulation Settings using Optuna BruteForceSampler."
     )
 
     parser.add_argument(
